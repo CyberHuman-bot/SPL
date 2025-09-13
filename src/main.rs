@@ -1,42 +1,22 @@
 use std::fs::File;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use rand::Rng;
-use serde::{Deserialize, Serialize};
 
-const CHUNK_SIZE: usize = 2 * 1024 * 1024; // 2 MB
-const CONFIG_FILE: &str = ".spl_config.json";
+// 2 MB chunks
+const CHUNK_SIZE: usize = 2 * 1024 * 1024;
+const SERVER_PORT: &str = "5001";
 
-#[derive(Serialize, Deserialize)]
-struct Config {
-    key: Vec<u8>,
-    port: u16,
-}
-
-// ---- Config management ----
-fn load_config() -> Config {
-    if Path::new(CONFIG_FILE).exists() {
-        let f = File::open(CONFIG_FILE).expect("Cannot open config file");
-        return serde_json::from_reader(f).expect("Config file corrupted");
-    }
-
-    let key: [u8; 32] = rand::thread_rng().gen();
-    let port: u16 = 5001;
-
-    let cfg = Config {
-        key: key.to_vec(),
-        port,
-    };
-
-    let f = File::create(CONFIG_FILE).expect("Cannot create config file");
-    serde_json::to_writer_pretty(f, &cfg).expect("Cannot write config file");
-    println!("🔑 New config generated at {}", CONFIG_FILE);
-    cfg
+// ---- Time helper ----
+fn current_unix() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }
 
 // ---- AES helpers ----
@@ -56,7 +36,7 @@ fn decrypt_chunk(key: &[u8], data: &[u8]) -> Result<Vec<u8>, aes_gcm::Error> {
     cipher.decrypt(nonce, &data[12..])
 }
 
-// ---- Progress ----
+// ---- Progress bar ----
 fn print_progress(transferred: usize, total: usize, start: std::time::Instant) {
     let percent = if total > 0 {
         (transferred as f64 / total as f64) * 100.0
@@ -73,30 +53,41 @@ fn print_progress(transferred: usize, total: usize, start: std::time::Instant) {
 }
 
 // ---- TCP Sender ----
-fn send_file_tcp(filename: &str, ip: &str, key: &[u8], port: u16) {
+fn send_file_tcp(filename: &str, ip: &str) {
     let mut file = File::open(filename).expect("File not found");
     let size = file.metadata().unwrap().len() as usize;
+
     println!(
         "📤 Sending {} ({:.2} MB) → {}:{}",
         filename,
         size as f64 / 1024.0 / 1024.0,
         ip,
-        port
+        SERVER_PORT
     );
 
-    let mut stream = TcpStream::connect(format!("{}:{}", ip, port)).expect("Cannot connect to receiver");
+    let mut stream = TcpStream::connect(format!("{}:{}", ip, SERVER_PORT)).unwrap();
+
+    // Generate a random AES key for this transfer
+    let key: [u8; 32] = rand::thread_rng().gen();
+
+    // Send key first
+    stream.write_all(&(key.len() as u32).to_be_bytes()).unwrap();
+    stream.write_all(&key).unwrap();
+
     let start = std::time::Instant::now();
     let mut buffer = vec![0u8; CHUNK_SIZE];
     let mut sent_bytes = 0;
 
     loop {
-        let n = file.read(&mut buffer).unwrap_or(0);
-        if n == 0 { break; }
+        let n = file.read(&mut buffer).unwrap();
+        if n == 0 {
+            break;
+        }
 
-        let encrypted = encrypt_chunk(key, &buffer[..n]);
+        let encrypted = encrypt_chunk(&key, &buffer[..n]);
         let len_bytes = (encrypted.len() as u32).to_be_bytes();
-        stream.write_all(&len_bytes).unwrap();
-        stream.write_all(&encrypted).unwrap();
+        stream.write_all(&len_bytes).unwrap(); // send length
+        stream.write_all(&encrypted).unwrap(); // then encrypted data
 
         sent_bytes += n;
         print_progress(sent_bytes, size, start);
@@ -105,41 +96,53 @@ fn send_file_tcp(filename: &str, ip: &str, key: &[u8], port: u16) {
 }
 
 // ---- TCP Receiver ----
-fn receive_file_tcp(outfile: &str, key: &[u8], port: u16) {
-    let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).expect("Cannot bind port");
-    println!("📥 Receiver ready on port {}, saving to {}", port, outfile);
+fn receive_file_tcp(outfile: &str) {
+    let listener = TcpListener::bind(format!("0.0.0.0:{}", SERVER_PORT)).unwrap();
+    println!("📥 Receiver ready on port {}, saving to {}", SERVER_PORT, outfile);
 
-    let (mut stream, _) = listener.accept().expect("Failed to accept connection");
-    let mut file = File::create(outfile).expect("Cannot create output file");
+    let (mut stream, _) = listener.accept().unwrap();
+
+    // Receive key first
+    let mut len_buf = [0u8; 4];
+    stream.read_exact(&mut len_buf).unwrap();
+    let key_len = u32::from_be_bytes(len_buf) as usize;
+    let mut key = vec![0u8; key_len];
+    stream.read_exact(&mut key).unwrap();
+
+    let mut file = File::create(outfile).unwrap();
     let start = std::time::Instant::now();
     let mut got_bytes = 0;
 
     loop {
         let mut len_buf = [0u8; 4];
-        if stream.read_exact(&mut len_buf).is_err() { break; }
+        if stream.read_exact(&mut len_buf).is_err() {
+            break;
+        }
         let len = u32::from_be_bytes(len_buf) as usize;
 
         let mut encrypted = vec![0u8; len];
-        if stream.read_exact(&mut encrypted).is_err() { break; }
+        if stream.read_exact(&mut encrypted).is_err() {
+            break;
+        }
 
-        let decrypted = match decrypt_chunk(key, &encrypted) {
+        let decrypted = match decrypt_chunk(&key, &encrypted) {
             Ok(data) => data,
-            Err(_) => { eprintln!("❌ Decryption failed"); break; }
+            Err(_) => {
+                eprintln!("❌ Decryption failed");
+                break;
+            }
         };
 
         file.write_all(&decrypted).unwrap();
         got_bytes += decrypted.len();
-        print_progress(got_bytes, got_bytes, start);
+        print_progress(got_bytes, got_bytes, start); // approximate total
     }
+
     println!("\n✅ File saved as {}", outfile);
 }
 
 // ---- CLI ----
 fn main() {
-    let cfg = load_config();
-    let key = &cfg.key;
-    let port = cfg.port;
-
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 2 {
         println!("Usage:\n  Sender: spl -<IP> <file>\n  Receiver: spl receive <outfile>");
@@ -147,10 +150,11 @@ fn main() {
     }
 
     if args[1].starts_with("-") {
-        send_file_tcp(&args[2], &args[1][1..], key, port);
+        send_file_tcp(&args[2], &args[1][1..]);
     } else if args[1] == "receive" {
-        receive_file_tcp(&args[2], key, port);
+        receive_file_tcp(&args[2]);
     } else {
         println!("❌ Invalid command");
     }
 }
+// ---- End of file ----
