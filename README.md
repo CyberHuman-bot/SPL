@@ -1,7 +1,6 @@
 # SPL Rust
 
 ![Rust](https://img.shields.io/badge/rust-1.89.0-orange)
-![License](https://img.shields.io/badge/license-MIT-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%20|%20Linux-lightgrey)
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
 
