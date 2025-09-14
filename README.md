@@ -83,22 +83,22 @@ cargo install --git https://github.com/CyberHuman-bot/SPL.git
 
 1. **Start the receiver** on the target machine:
    ```bash
-   ./spl_rust --receive
+   ./spl_rust receive <filename>
    ```
 
 2. **Send the file** from the source machine:
    ```bash
-   ./spl_rust --send <IP_ADDRESS> <FILE_PATH>
+   ./spl_rust -<IP_ADDRESS> <FILE_PATH>
    ```
 
 ### Example Transfer
 
 ```bash
 # On receiver (192.168.1.100)
-./spl_rust --receive
+./spl_rust receive mydocument.pdf
 
 # On sender
-./spl_rust --send 192.168.1.100 ./document.pdf
+./spl_rust -192.168.1.100 ./document.pdf
 ```
 
 ---
@@ -142,36 +142,6 @@ SUBCOMMANDS:
 ./spl_rust --verbose send 192.168.1.100 ./data.tar.gz
 ```
 
-#### Receiving Files
-
-```bash
-# Start receiver on default port (8080)
-./spl_rust receive
-
-# Receive on custom port
-./spl_rust --port 9000 receive
-
-# Quiet mode (minimal output)
-./spl_rust --quiet receive
-```
-
----
-
-## ⚙️ Configuration
-
-SPL automatically generates a configuration file on first run. You can customize settings by editing the config file or using the config command:
-
-```bash
-# Generate new configuration
-./spl_rust config --generate
-
-# View current configuration
-./spl_rust config --show
-
-# Set custom encryption key
-./spl_rust config --set-key <KEY>
-```
-
 ### Configuration File Location
 
 - **Linux/macOS**: `~/.config/spl/config.toml`
@@ -185,35 +155,13 @@ SPL automatically generates a configuration file on first run. You can customize
 
 ```bash
 # Terminal 1 (Receiver - 192.168.1.100)
-./spl_rust receive
+./spl_rust receive ./my.pptx
 # Output: Listening on 192.168.1.100:8080...
 
 # Terminal 2 (Sender)
-./spl_rust send 192.168.1.100 ./presentation.pptx
+./spl_rust -192.168.1.100 ./presentation.pptx
 # Output: Transferring presentation.pptx... [████████████████████] 100% (5.2 MB/s)
 ```
-
-### Large File Transfer with Custom Port
-
-```bash
-# Receiver
-./spl_rust --port 9999 receive
-
-# Sender
-./spl_rust --port 9999 send 192.168.1.100 ./backup.tar.gz
-```
-
-### Batch Operations
-
-```bash
-# Send multiple files (using shell loop)
-for file in *.pdf; do
-    ./spl_rust send 192.168.1.100 "$file"
-    sleep 2  # Wait between transfers
-done
-```
-
----
 
 ## 🔐 Security
 
@@ -297,12 +245,6 @@ cargo test test_encryption
 
 ---
 
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
 ## 🙏 Acknowledgments
 
 - Built with [Rust](https://www.rust-lang.org/) and the amazing Rust ecosystem
@@ -323,6 +265,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **[⬆ Back to Top](#spl-rust)**
 
-Made with ❤️ and 🦀 by the SPL Team
-
+Made with ❤️ by Yaman.
 </div>
