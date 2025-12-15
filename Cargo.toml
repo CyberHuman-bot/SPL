@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-aes-gcm = "0.11.0-rc.2"
+clap = { version = "4.5", features = ["derive"] }
+aes-gcm = "0.10"
 rand = "0.8"
 hmac = "0.12"
 sha2 = "0.10"
-clap = { version = "5.5", features = ["derive"] }
