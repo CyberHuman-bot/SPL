@@ -18,7 +18,7 @@ pub fn encrypt_chunk(key: &[u8], plaintext: &[u8]) -> Vec<u8> {
     let ciphertext = cipher.encrypt(nonce, plaintext).expect("Encryption failure");
 
     // Fix: Use fully qualified syntax to tell Rust to use the Hmac implementation
-    let mut mac = <HmacSha256 as hmac::KeyInit>::new_from_slice(key)
+    let mut mac = <HmacSha256 as KeyInit>::new_from_slice(key)
         .expect("HMAC key error");
     
     mac.update(&ciphertext);
@@ -42,7 +42,7 @@ pub fn decrypt_chunk(key: &[u8], data: &[u8]) -> Result<Vec<u8>, &'static str> {
     let tag = &data[tag_start..];
 
     // Fix: Use fully qualified syntax here as well
-    let mut mac = <HmacSha256 as hmac::KeyInit>::new_from_slice(key)
+    let mut mac = <HmacSha256 as KeyInit>::new_from_slice(key)
         .map_err(|_| "Invalid HMAC key")?;
     
     mac.update(ciphertext);
